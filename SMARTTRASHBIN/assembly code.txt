@@ -1,0 +1,93 @@
+; Ultrasonic Sensor Assembly Code
+
+; Define Arduino Pins
+#define TRIGGER_PIN 13
+#define ECHO_PIN 12
+
+; Define Constants
+#define MAX_DISTANCE 400    ; Maximum distance in centimeters
+#define TIMEOUT 10000       ; Timeout value in microseconds
+
+; Define Variables
+distance:   DS    2    ; 2-byte variable to store distance measurement
+
+; Initialize Program
+START:
+    ; Setup
+    LDI R16, LOW(RAMEND)     ; Initialize stack pointer
+    OUT SPL, R16
+    LDI R16, HIGH(RAMEND)
+    OUT SPH, R16
+    
+    ; Configure Arduino Pins
+    LDI R16, (1 << TRIGGER_PIN)    ; Set TRIGGER_PIN as output
+    OUT DDRB, R16
+    LDI R16, (1 << ECHO_PIN)       ; Set ECHO_PIN as input
+    OUT DDRB, R16
+
+MEASURE:
+    ; Trigger Pulse
+    LDI R16, (1 << TRIGGER_PIN)    ; Set TRIGGER_PIN high
+    OUT PORTB, R16
+    CALL DELAY_US                  ; Delay for 10 microseconds
+    
+    LDI R16, (0 << TRIGGER_PIN)    ; Set TRIGGER_PIN low
+    OUT PORTB, R16
+    
+    ; Wait for Echo Pulse
+    CPI R17, 0xFF                  ; Initialize timeout counter
+    BRNE WAIT
+    
+    ; Timeout occurred, no echo received
+    LDI R16, MAX_DISTANCE          ; Store maximum distance
+    STS distance, R16
+    JMP MEASURE
+    
+WAIT:
+    IN R18, PINB                   ; Read input value of ECHO_PIN
+    
+    ; Check if ECHO_PIN is high
+    SBRS R18, ECHO_PIN
+    RJMP WAIT
+    
+    ; Measure Echo Pulse Duration
+    LDI R17, HIGH(TIMEOUT)         ; Load high byte of timeout value
+    LDI R16, LOW(TIMEOUT)          ; Load low byte of timeout value
+    
+PULSE:
+    SBIC PINB, ECHO_PIN            ; Check if ECHO_PIN is low
+    RJMP PULSE                     ; If low, continue pulse
+    
+    ; ECHO_PIN is high, measure pulse width
+    SBIW R17, 1                    ; Decrement timeout counter
+    BRNE PULSE
+    
+    ; Timeout occurred, no echo received
+    LDI R16, MAX_DISTANCE          ; Store maximum distance
+    STS distance, R16
+    JMP MEASURE
+    
+    ; Echo received, calculate distance
+    LDI R16, LOW(distance)
+    STS distance+1, R16
+    LDI R16, HIGH(distance)
+    STS distance+2, R16
+    
+    ; Convert pulse duration to distance
+    LDI R16, 58                    ; Conversion factor (microseconds to centimeters)
+    MUL R16, R16                   ; Multiply R17 by R16
+    MOV R17, R0                    ; Store low byte of result in R17
+    LDI R16, 0                     ; Clear R16 for next multiplication
+    MUL R16, R16                   ; Multiply R17 by R16
+    ADD R17, R0                    ; Add high byte of result to R17
+    
+    ; Store measured distance
+    STS distance, R17
+    
+    ; Loop back to measure again
+    JMP MEASURE
+    
+DELAY_US:
+    LDI R18, 4                     ; Load delay value for 16MHz clock
+    
+DELAY_LOOP:
